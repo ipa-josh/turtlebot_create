@@ -94,6 +94,12 @@ CREATE_OPCODES = dict(
     wait_event = 158,
     )
 
+FKT_OPCODES = dict(
+    baud = 129,
+    sensors = 142,
+    direct_drive = 145
+    )
+
 REMOTE_OPCODES = {
     # Remote control.
     129: 'left',
@@ -273,7 +279,7 @@ class SerialCommandInterface(object):
     raise AttributeError
 
 
-class Roomba(object):
+class FKT(object):
 
   """Represents a Roomba robot."""
 
@@ -285,7 +291,7 @@ class Roomba(object):
   def start(self, tty='/dev/ttyUSB0', baudrate=57600):
     self.tty = tty
     self.sci = SerialCommandInterface(tty, baudrate)
-    self.sci.add_opcodes(ROOMBA_OPCODES)
+    self.sci.add_opcodes(FKT_OPCODES)
   
   def change_baud_rate(self, baud_rate):
     """Sets the baud rate in bits per second (bps) at which SCI commands and
@@ -305,136 +311,14 @@ class Roomba(object):
     self.sci.baud(baud_rate)
     self.sci = SerialCommandInterface(self.tty, baud_rate)
 
-  def passive(self):
-    """Put the robot in passive mode."""
-    self.sci.start()
-    time.sleep(0.5)
-
-  def control(self):
-    """Start the robot's SCI interface and place it in safe mode."""
-    self.passive()
-    if not self.safe:
-      self.sci.full()
-    else:
-      self.sci.safe()
-#    self.sci.control()  # Also puts the Roomba in to safe mode.
-    time.sleep(0.5)
-
   def direct_drive(self, velocity_left, velocity_right):
     # Mask integers to 2 bytes.
     vl = int(velocity_left) & 0xffff
     vr = int(velocity_right) & 0xffff
     self.sci.direct_drive(*struct.unpack('4B', struct.pack('>2H', vr, vl)))
-    
-  def drive(self, velocity, radius):
-    """controls Roomba's drive wheels.
-
-    NOTE(damonkohler): The following specification applies to both the Roomba
-    and the Turtlebot.
-
-    The Roomba takes four data bytes, interpreted as two 16-bit signed values
-    using two's complement. The first two bytes specify the average velocity
-    of the drive wheels in millimeters per second (mm/s), with the high byte
-    being sent first. The next two bytes specify the radius in millimeters at
-    which Roomba will turn. The longer radii make Roomba drive straighter,
-    while the shorter radii make Roomba turn more. The radius is measured from
-    the center of the turning circle to the center of Roomba.
-
-    A drive command with a positive velocity and a positive radius makes
-    Roomba drive forward while turning toward the left. A negative radius
-    makes Roomba turn toward the right. Special cases for the radius make
-    Roomba turn in place or drive straight, as specified below. A negative
-    velocity makes Roomba drive backward.
-
-    Also see drive_straight and turn_in_place convenience methods.
-
-    """
-    # Mask integers to 2 bytes.
-    velocity = int(velocity) & 0xffff
-    radius = int(radius) & 0xffff
-
-    # Pack as shorts to get 2 x 2 byte integers. Unpack as 4 bytes to send.
-    # TODO(damonkohler): The 4 unpacked bytes will just be repacked later,
-    # that seems dumb to me.
-    bytes = struct.unpack('4B', struct.pack('>2H', velocity, radius))
-    self.sci.drive(*bytes)
 
   def stop(self):
     """Set velocity and radius to 0 to stop movement."""
     self.drive(0, 0)
 
-  def slow_stop(self, velocity):
-    """Slowly reduce the velocity to 0 to stop movement."""
-    velocities = xrange(velocity, VELOCITY_SLOW, -25)
-    if velocity < 0:
-      velocities = xrange(velocity, -VELOCITY_SLOW, 25)
-    for v in velocities:
-      self.drive(v, RADIUS_STRAIGHT)
-      time.sleep(0.05)
-    self.stop()
 
-  def drive_straight(self, velocity):
-    """drive in a straight line."""
-    self.drive(velocity, RADIUS_STRAIGHT)
-
-  def turn_in_place(self, velocity, direction):
-    """Turn in place either clockwise or counter-clockwise."""
-    valid_directions = {'cw': RADIUS_TURN_IN_PLACE_CW,
-                        'ccw': RADIUS_TURN_IN_PLACE_CCW}
-    self.drive(velocity, valid_directions[direction])
-
-  def dock(self):
-    """Start looking for the dock and then dock."""
-    # NOTE(damonkohler): We should be able to call dock from any mode, however
-    # it only seems to work from passive.
-    self.sci.start()
-    time.sleep(0.5)
-    self.sci.force_seeking_dock()
-
-class Turtlebot(Roomba):
-
-  """Represents a Turtlebot robot."""
-
-  def __init__(self):
-    """
-    @param sensor_class: Sensor class to use for fetching and decoding sensor data.
-    """
-    super(Turtlebot, self).__init__()
-    
-  def start(self, tty='/dev/ttyUSB0', baudrate=57600):
-    super(Turtlebot, self).start(tty, baudrate)
-    self.sci.add_opcodes(CREATE_OPCODES)
-      
-  def control(self):
-    """Start the robot's SCI interface and place it in safe or full mode."""
-    logging.info('sending control opcodes.')
-    self.passive()
-    if self.safe:
-      self.sci.safe()
-    else:
-      self.sci.full()
-    time.sleep(0.5)
-
-  def power_low_side_drivers(self, drivers):
-    """Enable or disable power to low side drivers.
-
-    'drivers' should be a list of booleans indicating which low side drivers
-    should be powered.
-
-    """
-    assert len(drivers) == 3, 'Expecting 3 low side driver power settings.'
-    byte = 0
-    for driver, power in enumerate(drivers):
-      byte += (2 ** driver) * int(power)
-    self.sci.low_side_drivers(byte)
-
-  def set_digital_outputs(self, value):
-    """Enable or disable digital outputs."""
-    self.sci.digital_outputs(value)
-
-  def soft_reset(self):
-    """Do a soft reset of the Turtlebot."""
-    logging.info('sending soft reset.')
-    self.sci.soft_reset()
-    time.sleep(START_DELAY)
-    self.passive()
