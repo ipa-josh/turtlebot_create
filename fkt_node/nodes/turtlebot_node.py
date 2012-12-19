@@ -33,7 +33,7 @@
 #
 # Revision $Id: __init__.py 11217 2010-09-23 21:08:11Z kwc $
 
-import roslib; roslib.load_manifest('create_node')
+import roslib; roslib.load_manifest('fkt_node')
 
 """
 ROS Turtlebot node for ROS built on top of create_driver's
@@ -91,7 +91,7 @@ class TurtlebotNode(object):
         self.default_port = default_port
         self.default_update_rate = default_update_rate
 
-        self.robot = Turtlebot()
+        self.robot = FKT()
         self.sensor_handler = None
         self.sensor_state = TurtlebotSensorState()
         self.req_cmd_vel = None
